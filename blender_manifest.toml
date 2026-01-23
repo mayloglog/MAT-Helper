@@ -1,11 +1,11 @@
 schema_version = "1.0.0"
 id = "mat_helperr"
 name = "MAT Helper"
-version = "1.0.0"
+version = "1.0.4"
 tagline = "Auto-import and link UModel .mat textures to BSDF nodes"
 maintainer = "maylog"
 type = "add-on"
-tags = ["Node", "Shading", "Import-Export""]
+tags = ["Material", "Import-Export"]
 blender_version_min = "4.2.0"
 license = ["SPDX:GPL-3.0-or-later"]
 website = "https://github.com/mayloglog/MAT-Helper"
