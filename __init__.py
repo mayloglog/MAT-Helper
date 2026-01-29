@@ -1,10 +1,10 @@
 bl_info = {
-    "name": "MAT Helper",
+    "name": "MAT Helper (Advanced)",
     "author": "maylog",
     "version": (1, 0, 4),
     "blender": (4, 2, 0),
     "location": "Shader Editor > Sidebar & Material Properties",
-    "description": "Smart PBR texture importer with Packed map support",
+    "description": "Smart PBR texture importer with ORM detection and Scene-reuse logic",
     "category": "Material",
 }
 
@@ -14,7 +14,7 @@ import re
 from pathlib import Path
 
 class SHADER_OT_ImportMatTextures(bpy.types.Operator):
-    """Import textures with smart shared-map and Packed map logic"""
+    """Import textures with smart shared-map, Emissive and ORM logic"""
     bl_idname = "shader.import_umodel_mat"
     bl_label = "Process MAT"
     bl_options = {'REGISTER', 'UNDO'}
@@ -108,8 +108,12 @@ class SHADER_OT_ImportMatTextures(bpy.types.Operator):
             found_file = next((f for f in dir_files if f.stem == tex_name and f.suffix.lower() in supported_ext), None)
             
             if found_file:
+                # 功能A：优先检查场景中是否已有该贴图
+                img = bpy.data.images.get(found_file.name)
+                if not img:
+                    img = bpy.data.images.load(str(found_file))
+                
                 tex_node = nodes.new(type='ShaderNodeTexImage')
-                img = bpy.data.images.load(str(found_file))
                 tex_node.image = img
                 tex_node.location = (-1000, current_y)
                 
@@ -117,17 +121,18 @@ class SHADER_OT_ImportMatTextures(bpy.types.Operator):
                 is_color_map = any(t in ["diffuse", "emissive"] for t in types)
                 img.colorspace_settings.name = 'sRGB' if is_color_map else 'Non-Color'
 
+                # 功能B：ORM / ROM 识别并自动添加分离节点 (Separate Color)
+                is_packed = re.search(r'(ORM|ROM|RMA|AO_R_M)', tex_name, re.IGNORECASE)
+                if is_packed:
+                    sep_node = nodes.new(type='ShaderNodeSeparateColor')
+                    sep_node.location = (-720, current_y - 80)
+                    sep_node.label = f"Split: {tex_name}"
+                    links.new(tex_node.outputs['Color'], sep_node.inputs['Color'])
+                    tex_node.label = "Packed (ORM/ROM)"
+                    tex_node.use_custom_color = True
+                    tex_node.color = (0.5, 0.3, 0.8) # 紫色标记
+
                 if self.mode != 'READ_ONLY' and bsdf:
-                    # --- NEW: Separate Color for Packed Maps (ORM/MRO/RMA) ---
-                    upper_name = tex_name.upper()
-                    is_packed = any(suffix in upper_name for suffix in ["_ORM", "_MRO", "_RMA", "_MSK", "_MEP"])
-                    
-                    if scene.mat_helper_auto_sep_color and is_packed:
-                        sep_node = nodes.new(type='ShaderNodeSeparateColor')
-                        sep_node.location = (-700, current_y)
-                        links.new(tex_node.outputs['Color'], sep_node.inputs['Color'])
-                        tex_node.label = "Packed Texture"
-                    
                     # A. Diffuse Handling
                     if any("diffuse" in t for t in types):
                         links.new(tex_node.outputs['Color'], bsdf.inputs['Base Color'])
@@ -139,9 +144,10 @@ class SHADER_OT_ImportMatTextures(bpy.types.Operator):
                         links.new(tex_node.outputs['Color'], bsdf.inputs['Emission Color'])
                         if bsdf.inputs['Emission Strength'].default_value == 0.0:
                             bsdf.inputs['Emission Strength'].default_value = 1.0
+                        tex_node.label = "Emissive Map"
                     
-                    # C. Specular/Roughness Handling (Skip if it's a packed map we just separated)
-                    if any("specular" in t for t in types) and not is_packed:
+                    # C. Specular/Roughness Handling (Non-Packed)
+                    if not is_packed and any("specular" in t for t in types):
                         inv = nodes.new(type='ShaderNodeInvert')
                         inv.location = (-700, current_y)
                         links.new(tex_node.outputs['Color'], inv.inputs['Color'])
@@ -150,7 +156,7 @@ class SHADER_OT_ImportMatTextures(bpy.types.Operator):
                     # D. Other Slots
                     if any("opacity" in t for t in types):
                         links.new(tex_node.outputs['Color'], bsdf.inputs['Alpha'])
-                    if any("metallic" in t for t in types) and not is_packed:
+                    if not is_packed and any("metallic" in t for t in types):
                         links.new(tex_node.outputs['Color'], bsdf.inputs['Metallic'])
                     if any("normal" in t for t in types):
                         nm = nodes.new(type='ShaderNodeNormalMap')
@@ -177,7 +183,7 @@ class SHADER_OT_ImportMatTextures(bpy.types.Operator):
         self.report({'INFO'}, f"Successfully loaded: {mat_path.name}")
         return {'FINISHED'}
 
-# --- Shared UI Drawing ---
+# --- UI & Registration (Remaining parts stay the same) ---
 def draw_mat_helper_ui(self, context):
     layout = self.layout
     scene = context.scene
@@ -188,13 +194,10 @@ def draw_mat_helper_ui(self, context):
     col.separator()
     col.label(text="MAT Path (File or Folder):")
     col.prop(scene, "umodel_mat_path", text="")
-    
     col = layout.column(align=True)
-    col.prop(scene, "mat_helper_auto_alpha", text="Diffuse.Alpha -> Alpha")
-    col.prop(scene, "mat_helper_auto_sep_color", text="Auto Separate Packed Map (_ORM...)")
-    col.prop(scene, "mat_helper_auto_rough", text="Suffix _R -> Roughness")
-    col.prop(scene, "mat_helper_auto_metal", text="Suffix _M -> Metallic")
-    
+    col.prop(scene, "mat_helper_auto_alpha", text="Diffuse.Alpha -> Alpha (Fallback)")
+    col.prop(scene, "mat_helper_auto_rough", text="Suffix _R -> Roughness (Auto)")
+    col.prop(scene, "mat_helper_auto_metal", text="Suffix _M -> Metallic (Auto)")
     layout.separator(factor=1.5)
     col = layout.column(align=True)
     row = col.row()
@@ -227,7 +230,6 @@ def register():
     bpy.types.Scene.umodel_mat_path = bpy.props.StringProperty(name="MAT Path", subtype='FILE_PATH')
     bpy.types.Scene.umodel_tex_dir = bpy.props.StringProperty(name="Texture Path", subtype='DIR_PATH')
     bpy.types.Scene.mat_helper_auto_alpha = bpy.props.BoolProperty(name="Alpha Link", default=True)
-    bpy.types.Scene.mat_helper_auto_sep_color = bpy.props.BoolProperty(name="Sep Color Packed", default=True)
     bpy.types.Scene.mat_helper_auto_rough = bpy.props.BoolProperty(name="Suffix Rough", default=True)
     bpy.types.Scene.mat_helper_auto_metal = bpy.props.BoolProperty(name="Suffix Metal", default=True)
 
@@ -236,7 +238,6 @@ def unregister():
     del bpy.types.Scene.umodel_mat_path
     del bpy.types.Scene.umodel_tex_dir
     del bpy.types.Scene.mat_helper_auto_alpha
-    del bpy.types.Scene.mat_helper_auto_sep_color
     del bpy.types.Scene.mat_helper_auto_rough
     del bpy.types.Scene.mat_helper_auto_metal
 
