@@ -1,10 +1,10 @@
 bl_info = {
-    "name": "MAT Helper (Advanced)",
-    "author": "maylog",
-    "version": (1, 0, 4),
+    "name": "MAT Helper (Pro)",
+    "author": "maylog & Gemini",
+    "version": (1, 0, 5),
     "blender": (4, 2, 0),
     "location": "Shader Editor > Sidebar & Material Properties",
-    "description": "Smart PBR texture importer with ORM detection and Scene-reuse logic",
+    "description": "Auto-import and link UModel .mat textures to BSDF nodes",
     "category": "Material",
 }
 
@@ -14,7 +14,7 @@ import re
 from pathlib import Path
 
 class SHADER_OT_ImportMatTextures(bpy.types.Operator):
-    """Import textures with smart shared-map, Emissive and ORM logic"""
+    """Import textures with smart shared-map and missing file logging"""
     bl_idname = "shader.import_umodel_mat"
     bl_label = "Process MAT"
     bl_options = {'REGISTER', 'UNDO'}
@@ -101,89 +101,85 @@ class SHADER_OT_ImportMatTextures(bpy.types.Operator):
         current_y = 400
         rough_linked = any("specular" in t for types in tex_to_types.values() for t in types)
         metal_linked = any("metallic" in t for types in tex_to_types.values() for t in types)
+        
+        missing_textures = [] # 用于存储缺失贴图的列表
 
         # 4. Process unique textures
         for tex_name in unique_tex_order:
             types = tex_to_types[tex_name]
             found_file = next((f for f in dir_files if f.stem == tex_name and f.suffix.lower() in supported_ext), None)
             
-            if found_file:
-                # 功能A：优先检查场景中是否已有该贴图
-                img = bpy.data.images.get(found_file.name)
-                if not img:
-                    img = bpy.data.images.load(str(found_file))
+            if not found_file:
+                missing_textures.append(tex_name)
+                continue
+
+            # Scene Reuse Logic
+            img = bpy.data.images.get(found_file.name)
+            if not img:
+                img = bpy.data.images.load(str(found_file))
+            
+            tex_node = nodes.new(type='ShaderNodeTexImage')
+            tex_node.image = img
+            tex_node.location = (-1000, current_y)
+            
+            is_color_map = any(t in ["diffuse", "emissive"] for t in types)
+            img.colorspace_settings.name = 'sRGB' if is_color_map else 'Non-Color'
+
+            # ORM Detection
+            is_packed = re.search(r'(ORM|ROM|RMA|AO_R_M)', tex_name, re.IGNORECASE)
+            if is_packed:
+                sep_node = nodes.new(type='ShaderNodeSeparateColor')
+                sep_node.location = (-720, current_y - 80)
+                sep_node.label = f"Split (R:AO G:Rough B:Metal)"
+                links.new(tex_node.outputs['Color'], sep_node.inputs['Color'])
+                tex_node.label = "Packed (ORM/ROM)"
+                tex_node.use_custom_color = True
+                tex_node.color = (0.5, 0.3, 0.8)
+
+            if self.mode != 'READ_ONLY' and bsdf:
+                if any("diffuse" in t for t in types):
+                    links.new(tex_node.outputs['Color'], bsdf.inputs['Base Color'])
+                    if scene.mat_helper_auto_alpha and not has_opacity_standard:
+                        links.new(tex_node.outputs['Alpha'], bsdf.inputs['Alpha'])
                 
-                tex_node = nodes.new(type='ShaderNodeTexImage')
-                tex_node.image = img
-                tex_node.location = (-1000, current_y)
+                if any("emissive" in t for t in types):
+                    links.new(tex_node.outputs['Color'], bsdf.inputs['Emission Color'])
+                    if bsdf.inputs['Emission Strength'].default_value == 0.0:
+                        bsdf.inputs['Emission Strength'].default_value = 1.0
+                    tex_node.label = "Emissive Map"
                 
-                # Logic: Color maps (Diffuse, Emissive) use sRGB
-                is_color_map = any(t in ["diffuse", "emissive"] for t in types)
-                img.colorspace_settings.name = 'sRGB' if is_color_map else 'Non-Color'
+                if not is_packed and any("specular" in t for t in types):
+                    inv = nodes.new(type='ShaderNodeInvert')
+                    inv.location = (-700, current_y)
+                    links.new(tex_node.outputs['Color'], inv.inputs['Color'])
+                    links.new(inv.outputs['Color'], bsdf.inputs['Roughness'])
+                
+                if any("opacity" in t for t in types):
+                    links.new(tex_node.outputs['Color'], bsdf.inputs['Alpha'])
+                if not is_packed and any("metallic" in t for t in types):
+                    links.new(tex_node.outputs['Color'], bsdf.inputs['Metallic'])
+                if any("normal" in t for t in types):
+                    nm = nodes.new(type='ShaderNodeNormalMap')
+                    nm.location = (-700, current_y)
+                    links.new(tex_node.outputs['Color'], nm.inputs['Color'])
+                    links.new(nm.outputs['Normal'], bsdf.inputs['Normal'])
 
-                # 功能B：ORM / ROM 识别并自动添加分离节点 (Separate Color)
-                is_packed = re.search(r'(ORM|ROM|RMA|AO_R_M)', tex_name, re.IGNORECASE)
-                if is_packed:
-                    sep_node = nodes.new(type='ShaderNodeSeparateColor')
-                    sep_node.location = (-720, current_y - 80)
-                    sep_node.label = f"Split: {tex_name}"
-                    links.new(tex_node.outputs['Color'], sep_node.inputs['Color'])
-                    tex_node.label = "Packed (ORM/ROM)"
-                    tex_node.use_custom_color = True
-                    tex_node.color = (0.5, 0.3, 0.8) # 紫色标记
+            current_y -= 320
 
-                if self.mode != 'READ_ONLY' and bsdf:
-                    # A. Diffuse Handling
-                    if any("diffuse" in t for t in types):
-                        links.new(tex_node.outputs['Color'], bsdf.inputs['Base Color'])
-                        if scene.mat_helper_auto_alpha and not has_opacity_standard:
-                            links.new(tex_node.outputs['Alpha'], bsdf.inputs['Alpha'])
-                    
-                    # B. Emissive Handling
-                    if any("emissive" in t for t in types):
-                        links.new(tex_node.outputs['Color'], bsdf.inputs['Emission Color'])
-                        if bsdf.inputs['Emission Strength'].default_value == 0.0:
-                            bsdf.inputs['Emission Strength'].default_value = 1.0
-                        tex_node.label = "Emissive Map"
-                    
-                    # C. Specular/Roughness Handling (Non-Packed)
-                    if not is_packed and any("specular" in t for t in types):
-                        inv = nodes.new(type='ShaderNodeInvert')
-                        inv.location = (-700, current_y)
-                        links.new(tex_node.outputs['Color'], inv.inputs['Color'])
-                        links.new(inv.outputs['Color'], bsdf.inputs['Roughness'])
-                    
-                    # D. Other Slots
-                    if any("opacity" in t for t in types):
-                        links.new(tex_node.outputs['Color'], bsdf.inputs['Alpha'])
-                    if not is_packed and any("metallic" in t for t in types):
-                        links.new(tex_node.outputs['Color'], bsdf.inputs['Metallic'])
-                    if any("normal" in t for t in types):
-                        nm = nodes.new(type='ShaderNodeNormalMap')
-                        nm.location = (-700, current_y)
-                        links.new(tex_node.outputs['Color'], nm.inputs['Color'])
-                        links.new(nm.outputs['Normal'], bsdf.inputs['Normal'])
-
-                    # E. Suffix logic (Fallback)
-                    if not is_color_map and not is_packed: 
-                        if scene.mat_helper_auto_rough and not rough_linked:
-                            if re.search(r'(_r)$', tex_name, re.IGNORECASE):
-                                inv = nodes.new(type='ShaderNodeInvert')
-                                inv.location = (-700, current_y)
-                                links.new(tex_node.outputs['Color'], inv.inputs['Color'])
-                                links.new(inv.outputs['Color'], bsdf.inputs['Roughness'])
-                                rough_linked = True
-                        if scene.mat_helper_auto_metal and not metal_linked:
-                            if re.search(r'(_m)$', tex_name, re.IGNORECASE):
-                                links.new(tex_node.outputs['Color'], bsdf.inputs['Metallic'])
-                                metal_linked = True
-
-                current_y -= 320
-
-        self.report({'INFO'}, f"Successfully loaded: {mat_path.name}")
+        # 5. Output Results
+        if missing_textures:
+            print("\n" + "="*30)
+            print(f"MAT HELPER - MISSING TEXTURES IN: {mat_path.name}")
+            for m in missing_textures:
+                print(f"  [MISSING]: {m}")
+            print("="*30 + "\n")
+            self.report({'WARNING'}, f"Completed with {len(missing_textures)} missing textures. Check Console.")
+        else:
+            self.report({'INFO'}, f"Successfully loaded: {mat_path.name}")
+            
         return {'FINISHED'}
 
-# --- UI & Registration (Remaining parts stay the same) ---
+# --- UI & Registration (No changes below) ---
 def draw_mat_helper_ui(self, context):
     layout = self.layout
     scene = context.scene
