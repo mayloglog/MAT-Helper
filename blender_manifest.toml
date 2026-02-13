@@ -1,8 +1,8 @@
 schema_version = "1.0.0"
 id = "mat_helperr"
 name = "MAT Helper"
-version = "1.1.0"
-tagline = "Auto-import and link UModel .mat textures to BSDF nodes"
+version = "1.2.0"
+tagline = "Smart PBR texture importer for UModel .mat & .json exports"
 maintainer = "maylog"
 type = "add-on"
 tags = ["Material", "Import-Export"]
