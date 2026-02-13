@@ -4,7 +4,7 @@
 
 ## Key Features
 
-* **One-Click Batch Import:** Read `.mat` configuration files and automatically load all referenced textures from a specified directory.
+* **One-Click Batch Import:** Read `.mat`/`.JSON` configuration files and automatically load all referenced textures from a specified directory.
 * **Smart Node Linking:**
     * **Diffuse** maps are automatically connected to the **Base Color** slot.
     * **Metallic** maps are linked to the **Metallic** slot.
@@ -17,6 +17,8 @@
 ## How to Use
 
 1.  Open the **Shader Editor** and find the **MAT Helper** tab in the Sidebar (N-panel).
-2.  **MAT File Path:** Select your exported `.mat` file.
+2.  **MAT File Path:** Select your exported `.mat`/`.JSON` file.
 3.  **Image Location:** Select the folder containing your texture images.
 4.  Click **Read and Connect** to generate a full shader setup, or **Read Only** to just import the nodes into the workspace.
+
+* For best results, it is recommended to keep all texture files and .mat files in the same directory for automatic detection.
