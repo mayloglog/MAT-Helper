@@ -1,7 +1,7 @@
 bl_info = {
     "name": "MAT Helper",
     "author": "maylog",
-    "version": (1, 2, 0),
+    "version": (1, 2, 1),
     "blender": (4, 2, 0),
     "location": "Shader Editor > Sidebar & Material Properties",
     "description": "Smart PBR texture importer for UModel .mat & .json exports",
@@ -73,7 +73,7 @@ def process_material_data(mat, scene, tex_to_types, unique_tex_order, has_opacit
             links.clear()
 
     bsdf = next((n for n in nodes if n.type == 'BSDF_PRINCIPLED'), None)
-    supported_ext = {'.png', '.jpg', '.tga', '.dds', '.bmp', '.jpeg'}
+    supported_ext = {'.png', '.jpg', '.tga', '.dds', '.bmp', '.jpeg', '.webp', '.avif, ', '.tif', '.tiff'}
     dir_files = list(tex_dir.iterdir()) if tex_dir.exists() else []
     
     current_y = 400
