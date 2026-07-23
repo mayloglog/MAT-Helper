@@ -1,7 +1,7 @@
 bl_info = {
     "name": "MAT Helper",
     "author": "maylog",
-    "version": (1, 2, 1),
+    "version": (1, 2, 2),
     "blender": (4, 2, 0),
     "location": "Shader Editor > Sidebar & Material Properties",
     "description": "Smart PBR texture importer for UModel .mat & .json exports",
@@ -13,6 +13,8 @@ import os
 import re
 import json
 from pathlib import Path
+from .translations import translations_dict
+from bpy.app.translations import pgettext_iface
 
 # --- 数据解析函数 ---
 
@@ -236,8 +238,8 @@ def draw_mat_helper_ui(self, context):
     col = layout.column(align=True)
     row = col.row(align=True)
     row.scale_y = 1.5
-    row.operator("shader.import_umodel_mat", text="Link Active", icon='NODE_SEL').mode = 'AUTO_NAME'
-    row.operator("shader.import_umodel_mat", text="Batch All", icon='PLAY').mode = 'BATCH_ALL'
+    row.operator("shader.import_umodel_mat", text=pgettext_iface("Link Active"), icon='NODE_SEL').mode = 'AUTO_NAME'
+    row.operator("shader.import_umodel_mat", text=pgettext_iface("Batch All"), icon='PLAY').mode = 'BATCH_ALL'
     col.label(text="* For best results, keep files in same directory.", icon='INFO')
 
 class SHADER_PT_MatHelperSidebar(bpy.types.Panel):
@@ -259,6 +261,7 @@ class SHADER_PT_MatHelperMaterial(bpy.types.Panel):
 classes = (SHADER_OT_ImportMatTextures, SHADER_PT_MatHelperSidebar, SHADER_PT_MatHelperMaterial)
 
 def register():
+    bpy.app.translations.register(__name__, translations_dict)
     for cls in classes: bpy.utils.register_class(cls)
     s = bpy.types.Scene
     s.umodel_mat_path = bpy.props.StringProperty(name="MAT Path", subtype='FILE_PATH')
@@ -271,6 +274,7 @@ def register():
     s.mat_helper_clear_nodes = bpy.props.BoolProperty(default=False)
 
 def unregister():
+    bpy.app.translations.unregister(__name__)
     for cls in reversed(classes): bpy.utils.unregister_class(cls)
 
 if __name__ == "__main__":
