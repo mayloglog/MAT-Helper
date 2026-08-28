@@ -32,7 +32,7 @@ translations_dict = {
 
         # 枚举值
         ("*", ".MAT"): ".MAT",
-        (".JSON"): ".JSON",
+        ("*", ".JSON"): ".JSON",
 
         # 控制台日志
         ("*", "[MAT Helper] Missing: {}"): "[MAT助手] 缺失：{}",
@@ -72,7 +72,7 @@ translations_dict = {
 
         # 枚舉值
         ("*", ".MAT"): ".MAT",
-        (".JSON"): ".JSON",
+        ("*", ".JSON"): ".JSON",
 
         # 控制台日誌
         ("*", "[MAT Helper] Missing: {}"): "[MAT助手] 缺失：{}",

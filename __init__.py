@@ -1,7 +1,7 @@
 bl_info = {
     "name": "MAT Helper",
     "author": "maylog",
-    "version": (1, 2, 2),
+    "version": (1, 2, 3),
     "blender": (4, 2, 0),
     "location": "Shader Editor > Sidebar & Material Properties",
     "description": "Smart PBR texture importer for UModel .mat & .json exports",
